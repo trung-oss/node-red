@@ -1,0 +1,34 @@
+name: Deploy Node-RED flows to Staging
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.STAGING_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy flows & settings to staging
+        env:
+          DEST_DIR: ${{ secrets.STAGING_NODE_RED_DIR }}   # e.g. /home/ubuntu/.node-red
+        run: |
+          scp -i ~/.ssh/id_rsa flows.json  ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}:$DEST_DIR/flows.json
+          scp -i ~/.ssh/id_rsa settings.js ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}:$DEST_DIR/settings.js
+
+      - name: Restart Node-RED service
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            'if command -v pm2 >/dev/null 2>&1; then pm2 restart node-red || pm2 start node-red; \
+             elif systemctl --user status node-red.service >/dev/null 2>&1; then systemctl --user restart node-red.service; \
+             else echo "⚠️ Please restart Node-RED manually"; fi'
